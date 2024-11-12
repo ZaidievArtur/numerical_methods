@@ -40,15 +40,6 @@ double* get_grid(double a, double b, int n) {
     return grid;
 }
 
-double* get_refined_grid(double a, double b, int n) {
-    double* grid = (double*)malloc((n + 1) * sizeof(double));
-    for (int k = 0; k <= n; k++) {
-        double t = (double)k / n;
-        grid[k] = a + (b - a) * 0.5 * (1 - cos(M_PI * t));
-    }
-    return grid;
-}
-
 double** createArray(int n, int m) {
     double** array = (double**)malloc(n * sizeof(double*));
     for (int i = 0; i < n; i++) {
@@ -85,14 +76,6 @@ double** system_equations(double h, int n, double* grid) {
     Y[n][n - 1] = -1 / h;
     Y[n][n] = 1 + 1 / h;
     Y[n][n + 1] = 2 * exp(1);
-
-    double coefficient1 = -Y[1][0] / Y[0][0];
-    double coefficient2 = -Y[n - 1][n] / Y[n][n];
-
-    for (int i = 0; i <= n + 1; i++) {
-        Y[1][i] += Y[0][i] * coefficient1;
-        Y[n - 1][i] += Y[n][i] * coefficient2;
-    }
 
     return Y;
 }
@@ -138,136 +121,73 @@ double* thomas_algorithm(int n, double** matrix) {
     return x;
 }
 
+double interpolate(double* old_solution, int old_n, double* old_grid, double x) {
+    int i = 0;
+    while (i < old_n && x > old_grid[i + 1]) i++;
+    if (i == old_n) i--;
+    double t = (x - old_grid[i]) / (old_grid[i + 1] - old_grid[i]);
+    return old_solution[i] * (1 - t) + old_solution[i + 1] * t;
+}
+
 double** system_equations_with_accuracy(double a, double b, int& n, double eps, double*& grid) {
     double h = (b - a) / n;
     double max_error;
-    double* prev_solution = nullptr; 
+    double* prev_solution = nullptr;
+    double* prev_grid = nullptr;
+    int prev_n = n;
 
     do {
-        
-        double** Y = createArray(n + 1, n + 2);
-        for (int i = 0; i <= n; i++) {
-            for (int j = 0; j <= n + 1; j++) {
-                Y[i][j] = 0;
-            }
-        }
-
-        Y[0][0] = 1;
-        Y[0][n + 1] = 1;
-
-        for (int i = 1; i <= n - 1; i++) {
-            Y[i][i - 1] = p(grid[i]) - q(grid[i]) / 2.0 * h;
-            Y[i][i] = pow(h, 2) * r(grid[i]) - 2 * p(grid[i]);
-            Y[i][i + 1] = p(grid[i]) + q(grid[i]) / 2.0 * h;
-            Y[i][n + 1] = pow(h, 2) * f(grid[i]);
-        }
-
-        Y[n][n - 1] = -1 / h;
-        Y[n][n] = 1 + 1 / h;
-        Y[n][n + 1] = 2 * exp(1);
-
-        double coefficient1 = -Y[1][0] / Y[0][0];
-        double coefficient2 = -Y[n - 1][n] / Y[n][n];
-
-        for (int i = 0; i <= n + 1; i++) {
-            Y[1][i] += Y[0][i] * coefficient1;
-            Y[n - 1][i] += Y[n][i] * coefficient2;
-        }
-
-        
+        double** Y = system_equations(h, n, grid);
         double* solution = thomas_algorithm(n, Y);
 
-        
         if (prev_solution) {
             max_error = 0;
             for (int i = 0; i <= n; i++) {
-                double error = fabs(solution[i] - prev_solution[i]);
+                double interp_val = interpolate(prev_solution, prev_n, prev_grid, grid[i]);
+                double error = fabs(solution[i] - interp_val);
                 if (error > max_error) {
                     max_error = error;
                 }
             }
             if (max_error < eps) {
                 free(prev_solution);
+                free(prev_grid);
                 return Y;
             }
         }
 
+        prev_n = n;
+        if (prev_solution) {
+            free(prev_solution);
+            free(prev_grid);
+        }
+        prev_solution = solution;
+        prev_grid = grid;
+
         n *= 2;
         h /= 2;
-        grid = (double*)realloc(grid, (n + 1) * sizeof(double));
-        for (int i = 0; i <= n; i++) {
-            grid[i] = a + i * h;
-        }
-
-        if (prev_solution) free(prev_solution);
-        prev_solution = solution;
+        grid = get_grid(a, b, n);
 
         freeArray(Y, n / 2 + 1);
     } while (true);
 }
 
-
 int main() {
     int n = 5;
     double* grid = get_grid(a, b, n);
     double h = grid[1] - grid[0];
-    double** table_coeff = system_equations(h, n, grid);
-    double* solution = thomas_algorithm(n, table_coeff);
-    ofstream file5("nodes5.txt");
+    double eps = 1e-5;
 
+    double** Y = system_equations_with_accuracy(a, b, n, eps, grid);
+    double* solution = thomas_algorithm(n, Y);
+
+    ofstream fout("solution.txt");
     for (int i = 0; i <= n; i++) {
-        file5 << grid[i] << " " << solution[i] << " " << exact(grid[i]) << " " << fabs(solution[i] - exact(grid[i])) << endl;
+        fout << grid[i] << " " << solution[i] << " " << exact(grid[i]) << " " << fabs(solution[i] - exact(grid[i])) << endl;
     }
-    file5.close();
-    freeArray(table_coeff, n + 1);
-    free(solution);
+    fout.close();
 
-    n = 10;
-    grid = get_grid(a, b, n);
-    h = grid[1] - grid[0];
-    table_coeff = system_equations(h, n, grid);
-    solution = thomas_algorithm(n, table_coeff);
-    ofstream file10("nodes10.txt");
-    for (int i = 0; i <= n; i++) {
-        file10 << grid[i] << " " << solution[i] << " " << exact(grid[i]) << " " << fabs(solution[i] - exact(grid[i])) << endl;
-    }
-    file10.close();
-    freeArray(table_coeff, n + 1);
-    free(solution);
-
-    ofstream ferror("error.txt");
-    double error = 0;
-    double eps = 1e-1;
-    for (int k = 1; k < 5; k++) {
-        error = 0;
-        grid = get_grid(a, b, n);
-        h = grid[1] - grid[0];
-        table_coeff = system_equations_with_accuracy(0, 1, n, eps, grid);
-        solution = thomas_algorithm(n, table_coeff);
-
-        for (int i = 0; i <= n; i++) {
-            error = fmax(error, fabs(solution[i] - exact(grid[i])));
-        }
-        ferror << eps << " " << error << endl;
-        freeArray(table_coeff, n + 1);
-        free(solution);
-        free(grid);
-        eps /= 10;
-    }
-    ferror.close();
-
-    n = 10;
-    grid = get_refined_grid(a, b, n);
-    h = grid[1] - grid[0];
-    table_coeff = system_equations(h, n, grid);
-    solution = thomas_algorithm(n, table_coeff);
-    ofstream file_refined("nodes_refined.txt");
-
-    for (int i = 0; i <= n; i++) {
-        file_refined << grid[i] << " " << solution[i] << " " << exact(grid[i]) << " " << fabs(solution[i] - exact(grid[i])) << endl;
-    }
-    file_refined.close();
-    freeArray(table_coeff, n + 1);
+    freeArray(Y, n + 1);
     free(solution);
     free(grid);
 
