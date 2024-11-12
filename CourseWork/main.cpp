@@ -45,24 +45,43 @@ double AdamsBashforth4(double a, double y0, double b, double h, double epsilon) 
     double fxy[4];
     double x = kuttaMersonSetup(a, y0, h, y, epsilon);
 
+    // Заполняем массив значений функции на начальных точках
     for (int i = 0; i < 4; i++) {
         fxy[i] = f(x - (3 - i) * h, y[i]);
     }
 
     double y_temp = y[3];
-    while (x + h <= b) {
-        y_temp = y[3] + (55 * fxy[3] - 59 * fxy[2] + 37 * fxy[1] - 9 * fxy[0]) * h / 24;
-        x += h;
 
-        if (fabs(y_temp - y[3]) / 15 > epsilon) {
-            h /= 2;
+    while (x + h <= b) {
+        // Основное вычисление y_temp при шаге h
+        double y_next_h = y[3] + (55 * fxy[3] - 59 * fxy[2] + 37 * fxy[1] - 9 * fxy[0]) * h / 24;
+
+        // Вычисляем y_next_h2 на два шага по h/2
+        double y_next_h2 = y[3];
+        double x_half_step = x;
+        for (int step = 0; step < 2; step++) {
+            y_next_h2 += (55 * fxy[3] - 59 * fxy[2] + 37 * fxy[1] - 9 * fxy[0]) * (h / 2) / 24;
+            x_half_step += h / 2;
+            for (int j = 0; j < 3; j++) {
+                fxy[j] = fxy[j + 1];
+            }
+            fxy[3] = f(x_half_step, y_next_h2);
+        }
+
+        // Проверка разницы между y_next_h и y_next_h2
+        if (fabs(y_next_h2 - y_next_h) > epsilon) {
+            h /= 2;  // Уменьшаем шаг, если погрешность велика
         } else {
+            // Если точность достаточна, обновляем значения для следующего шага
+            x += h;
+            y_temp = y_next_h;
             for (int j = 0; j < 3; j++) {
                 y[j] = y[j + 1];
                 fxy[j] = fxy[j + 1];
             }
             y[3] = y_temp;
             fxy[3] = f(x, y_temp);
+            countAdamsBashforth++;
         }
     }
 
@@ -74,7 +93,6 @@ void saveData(const string& filename, const vector<double>& steps, const vector<
     for (size_t i = 0; i < steps.size(); ++i) {
         file << steps[i] << "," << calls_adams[i] << "\n";
     }
-
     file.close();
 }
 
